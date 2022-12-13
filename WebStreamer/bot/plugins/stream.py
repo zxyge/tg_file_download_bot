@@ -57,7 +57,7 @@ async def media_receive_handler(_, m: Message):
         reply_markup=rm,
     )
     queue.put({
-        'url': url,
+        'url': m.id,
         'file_name': file_name,
         'file_size': file_size,
         'm': m.from_user.id

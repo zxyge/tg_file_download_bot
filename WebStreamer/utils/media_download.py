@@ -3,16 +3,21 @@ import logging
 import time
 import multiprocessing
 import httpx
+import secrets
+import mimetypes
 import os
 import requests
+import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from WebStreamer import Var
+from WebStreamer import Var, utils
+from WebStreamer.bot import multi_clients, work_loads
 import nest_asyncio
 
 nest_asyncio.apply()
 
 task_list = []
 queue = multiprocessing.Queue(maxsize=15)
+class_cache = {}
 
 
 def calc_divisional_range(filesize, chuck=10):
@@ -64,7 +69,7 @@ def upload(file_name, cloud_path):
     return status, err
 
 
-def download(url, file_name, file_size):
+def download(m_id, file_name, file_size):
     status = 0
     err = ''
     if not os.path.exists(Var.DOWNLOAD_PATH):
@@ -84,7 +89,7 @@ def download(url, file_name, file_size):
             with ThreadPoolExecutor() as p:
                 futures = []
                 for s_pos, e_pos in divisional_ranges:
-                    futures.append(p.submit(range_download, url, save_path, s_pos, e_pos))
+                    futures.append(p.submit(media_streamer, m_id, save_path, s_pos, e_pos))
                 as_completed(futures)
 
         except Exception as e:
@@ -98,11 +103,40 @@ def send_msg(user_id, text):
     httpx.get(url)
 
 
+def media_streamer(message_id, file_name, from_bytes, until_bytes):
+    index = min(work_loads, key=work_loads.get)
+    faster_client = multi_clients[index]
+    if faster_client in class_cache:
+        tg_connect = class_cache[faster_client]
+        logging.debug(f"Streamer: Using cached ByteStreamer object for client {index}")
+    else:
+        logging.debug(f"Streamer: Creating new ByteStreamer object for client {index}")
+        tg_connect = utils.ByteStreamer(faster_client)
+        class_cache[faster_client] = tg_connect
+    logging.debug(f"Streamer: before calling get_file_properties")
+    file_id = await tg_connect.get_file_properties(message_id)
+    logging.debug(f"Streamer: after calling get_file_properties")
+    chunk_size = Var.DOWNLOAD_CACHE * (1024 ** 2)
+    offset = from_bytes - (from_bytes % chunk_size)
+    first_part_cut = from_bytes - offset
+    last_part_cut = until_bytes % chunk_size + 1
+    part_count = math.ceil(until_bytes / chunk_size) - math.floor(offset / chunk_size)
+    body = tg_connect.yield_file(
+        file_id, index, offset, first_part_cut, last_part_cut, part_count, chunk_size
+    )
+    p = open(body, 'rb')
+    with open(os.path.join(Var.DOWNLOAD_PATH, file_name), "rb+") as f:
+        f.seek(from_bytes)
+        f.write(p.read())
+    p.close()
+    del p
+
+
 def workers(queue, name):
     while True:
         try:
             task = queue.get()
-            url = task['url']
+            url = task['m_id']
             file_name = task['file_name']
             file_size = task['file_size']
             m = task['m']
@@ -129,6 +163,7 @@ def workers(queue, name):
         except KeyboardInterrupt:
             break
         time.sleep(1)
+
 
 
 def start():
