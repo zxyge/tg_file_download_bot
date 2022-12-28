@@ -18,12 +18,14 @@ python3 -m WebStreamer
 ```
 
 使用方法：
+```
 API_ID : 去 my.telegram.org 获取.
 API_HASH : 去 my.telegram.org 获取.
 BOT_TOKEN : @BotFather获取
 BIN_CHANNEL : 创建一个频道（公开私有都行），把bot拉进去设置成管理员，转发给bot的消息都会发送到这个频道，删除频道内的消息后对应的url将不可用
 其他参数参考env文件中的注释自行修改。
-
 将文件转发给bot
+```
+
 如要开启上传，需安装rclone，并配置好网盘。
 
